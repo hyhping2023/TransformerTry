@@ -13,7 +13,9 @@ class TransformerDecoderBlock(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, ):
         super().__init__()
-        self.tokenizer = Tokenizer(True, 'Chinese7000.txt', 'chars.pkl', True)
+        self.embedding = Tokenizer(pre_model_file=True, pre_index_file=True,
+                          load_model_file='model.pkl', load_index_file='chars.pkl', 
+                          train_data='train1.txt')
 
 if __name__ == '__main__':
     transformer = Transformer()

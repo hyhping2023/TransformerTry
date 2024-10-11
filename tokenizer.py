@@ -56,6 +56,7 @@ class Tokenizer:
         else:
             with open(load_model_file, 'rb') as f:
                 self.model = pickle.load(f)
+        self.reverseDict = {v: k for k, v in self.chars.items()}
 
             
     def get_hot_vector(self, inx:int, length:int) -> list:
@@ -136,6 +137,11 @@ class Tokenizer:
         with torch.no_grad():
             embedding_vectors = [torch.mean(self.model.net1(torch.stack(hot_vectors[max(0,idx-forward_window):idx+backward_window+1]).to(device)), dim=0) for idx in range(len(tokens))]
         return embedding_vectors
+    
+    def output_prediction(self, tensor, topk:int = 3) -> list:
+        assert self.model is not None
+        prediction = torch.argsort(self.model.net2(tensor), descending=True)
+        return [self.reverseDict[_.item()] for _ in prediction[:topk]]
 
 def continue_training(model:Tokenizer, data_dir:str, device = 'cuda'):
     assert model.model is not None
@@ -148,4 +154,6 @@ if __name__ == '__main__':
     tokenizer = Tokenizer(pre_model_file=True, pre_index_file=True,
                           load_model_file='model.pkl', load_index_file='chars.pkl', 
                           train_data='train1.txt')
-    print(tokenizer.input_embedding('你好, 我爱你中国', device='cuda')[0])
+    # print(tokenizer.input_embedding('你好, 我爱你中国', device='cuda')[0])
+    ni = tokenizer.output_prediction(tokenizer.input_embedding('等到全体声优都来齐后，一同进入录音室，在音响监督的指示下，有条不紊的开始配音', 1, 1, device='cuda')[4], topk=5)
+    print(ni)
