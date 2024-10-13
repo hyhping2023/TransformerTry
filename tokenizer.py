@@ -51,7 +51,7 @@ class EmbeddingModel(nn.Module):
 class Tokenizer:
     model = None
     def __init__(self, pre_model_file:bool, pre_index_file:bool, 
-                 load_pre_data_file = None, load_model_file = None, load_index_file = None, train_data = None) -> None:
+                 load_pre_data_file = None, load_model_file = None, load_index_file = None, train_data = None, device = 'cuda') -> None:
         self.train_data = train_data
         if not pre_index_file:
             self.pre_loading(load_pre_data_file)
@@ -61,18 +61,20 @@ class Tokenizer:
             with open(load_index_file, 'rb') as f:
                 self.chars = pickle.load(f)
         if not pre_model_file:
-            self.train_embedding(train_data, 3, 3)
+            self.train_embedding(train_data, 3, 3, deivce=device)
         else:
             with open(load_model_file, 'rb') as f:
                 self.model = pickle.load(f)
+            self.model.change_device(device)
+        self.device = device
         self.reverseDict = {v: k for k, v in self.chars.items()}
 
     def change_device(self, device):
         self.device = device
         self.model.change_device(device)
             
-    def get_hot_vector(self, inx:int, length:int) -> list:
-        hot_vector = torch.zeros(length)
+    def get_hot_vector(self, inx:int, length:int, device = 'cuda') -> list:
+        hot_vector = torch.zeros(length, device = device)
         hot_vector[inx] = 1
         return hot_vector
         
@@ -162,16 +164,25 @@ class Tokenizer:
     def input_embedding(self, text:str, forward_window:int = 1, backward_window:int = 1, device = 'cuda') -> list:
         assert self.model is not None
         tokens = self.tokenize(text)
-        hot_vectors = [self.get_hot_vector(token, len(self.chars)) for token in tokens]
+        hot_vectors = [self.get_hot_vector(token, len(self.chars), device) for token in tokens]
         with torch.no_grad():
-            embedding_vectors = [torch.mean(self.model.net1(torch.stack(hot_vectors[max(0,idx-forward_window):idx+backward_window+1]).to(device)), dim=0) for idx in range(len(tokens))]
+            embedding_vectors = [torch.mean(self.model.net1(torch.stack(hot_vectors[max(0,idx-forward_window):idx+backward_window+1])), dim=0) for idx in range(len(tokens))]
         return torch.stack(embedding_vectors)
     
-    def output_prediction(self, tensor, topk:int = 3) -> list:
+    def output_prediction(self, tensor, topk:int = 3, toChar: bool = False) -> list:
         assert self.model is not None
-        prediction = torch.argsort(self.model.net2(tensor), descending=True)[:, 0:topk].to('cpu').tolist()
-        prediction = [[self.reverseDict[i] for i in pred] for pred in prediction]
-        return prediction
+        prediction = torch.argsort(self.model.net2(tensor[:, -1, :]), descending=True)[:, 0:topk].to('cpu').tolist()
+        if not toChar:
+            return prediction[0][0]
+        else:
+            return self.reverseDict[prediction[0][0]]
+    
+    def output(self, tensor):
+        return self.model.net2(tensor[:, -1, :])
+
+    def toChar(self, tensor):
+        assert self.model is not None
+        return [self.reverseDict[tensor[_][0].item()].replace('<unk>', ' ') for _ in range(len(tensor))]
 
 def continue_training(model:Tokenizer, data_dir:str, device = 'cuda'):
     assert model.model is not None
@@ -183,7 +194,7 @@ if __name__ == '__main__':
     #                       load_pre_data_file='Chinese7000.txt', train_data='train1.txt')
     tokenizer = Tokenizer(pre_model_file=True, pre_index_file=True,
                           load_model_file='model_norelate.pkl', load_index_file='chars.pkl', 
-                          train_data='train1.txt')
+                          train_data='train1.txt', device='cuda:1')
     # print(tokenizer.input_embedding('你好, 我爱你中国,我最喜欢东风31甲改', device='cuda').shape)
 
     ni = tokenizer.output_prediction(tokenizer.input_embedding('你好，我叫阿尼亚', 0, 0, device='cuda'), topk=5)
