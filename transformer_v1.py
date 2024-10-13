@@ -230,11 +230,16 @@ class Transformer(nn.Module):
         
         return self.embedding.projection.output(dec_outputs)
     
-    def predict(self, enc_inputs, dec_inputs, ignore = []):
+    def predict(self, enc_inputs:list, dec_inputs:list, step = 30, ignore = []):
+        assert len(enc_inputs) == len(dec_inputs)
         ignore = self.ignore_split(ignore)
-        enc_outputs, enc_attention = self.encoder.forward(enc_inputs, ignore)
-        dec_outputs, dec_attention, dec_enc_attention = self.decoder.forward(dec_inputs, enc_inputs, enc_outputs, ignore)
-        return self.embedding.projection.output_prediction(dec_outputs, toChar=True)
+        for _ in range(step):
+            enc_outputs, enc_attention = self.encoder.forward(enc_inputs, ignore)
+            dec_outputs, dec_attention, dec_enc_attention = self.decoder.forward(dec_inputs, enc_inputs, enc_outputs, ignore)
+            dec_outputs = self.embedding.projection.output(dec_outputs)
+            dec_outputs = torch.argmax(dec_outputs, dim = -1)
+            dec_inputs = self.addToDecode(dec_inputs, dec_outputs.unsqueeze(1))
+        return dec_inputs
     
     def addToDecode(self, decode_input, decode_output):
         chars = self.embedding.projection.toChar(decode_output)
@@ -291,4 +296,10 @@ if __name__ == '__main__':
     # print(transformer.optimizer.param_groups)
     # import cProfile
     # cProfile.run('transformer.train("./train1.txt", epoches=1, iter_size=1000, batch_size=512, seqence_length=20)', sort='cumtime')
-    transformer.train('./train1.txt', epoches=100, iter_size=1000, batch_size=512, seqence_length=30, device='cuda:0')
+    transformer.train('./train1.txt', epoches=100, iter_size=100000, batch_size=4096, seqence_length=30, device='cuda:1')
+    
+    transformer = Transformer(device='cuda:2')
+    transformer.load_state_dict(torch.load('transformer.pkl'))
+    results = transformer.predict(['你好，我叫阿尼亚', '我真的不是基佬啊'], ['\n', '\n'], 50)
+    for result in results:
+        print(result)
